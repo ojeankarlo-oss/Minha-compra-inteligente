@@ -1,0 +1,8 @@
+MINHA COMPRA INTELIGENTE - MVP
+
+1. Hospede a pasta em um serviço HTTPS de sites estáticos (por exemplo GitHub Pages, Netlify ou Cloudflare Pages).
+2. Abra o endereço HTTPS no Chrome do Android e escolha Instalar aplicativo ou Adicionar à tela inicial.
+3. A lista é salva localmente no navegador deste aparelho. Excluir dados do navegador pode apagar a lista.
+4. A leitura de fotos usa Tesseract.js e precisa baixar arquivos da internet; pode falhar e exige conferência manual.
+5. O app não sincroniza entre celulares. A função Exportar gera um arquivo TXT da lista selecionada.
+6. Para teste em computador, sirva esta pasta com um servidor local (por exemplo python -m http.server 8000) e abra http://localhost:8000.
