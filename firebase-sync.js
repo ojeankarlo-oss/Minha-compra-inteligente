@@ -8,9 +8,53 @@ let displayedItems=new Map(),displayedBudget=0,pending=new Map(),pendingBudget=n
 const status=t=>{$('syncStatus').textContent=t};
 const randomCode=(bytes=16)=>Array.from(crypto.getRandomValues(new Uint8Array(bytes)),x=>x.toString(16).padStart(2,'0')).join('');
 const errorText=e=>`${e.code||'Erro'}: ${e.message||e}`;
+const inviteFromUrl=new URL(location.href).searchParams.get('convite');
+if(inviteFromUrl){const clean=new URL(location.href);clean.searchParams.delete('convite');history.replaceState(null,'',clean.pathname+clean.search+clean.hash);}
+const inviteLink=()=>{const u=new URL('./',location.href);u.searchParams.set('convite',$('inviteCode').value);return u.href;};
+async function copyText(value,message){try{await navigator.clipboard.writeText(value);status(message);}catch{prompt('Copie:',value);}}
+async function joinByCode(code){
+ if(!uid)return status('Aguarde a autenticação.');
+ code=(code||'').trim().toLowerCase();
+ if(!/^[a-f0-9]{32}$/.test(code))return status('Código inválido.');
+ try{
+  const invite=await getDoc(doc(db,'convites',code));
+  if(!invite.exists())throw Error('Convite não encontrado');
+  const data=invite.data();
+  if(data.expiresAt<Date.now())throw Error('Convite expirado');
+  if(listId===data.listId)return status('Você já está nesta lista compartilhada.');
+  if(listId&&!confirm('Trocar a lista compartilhada deste aparelho?'))return;
+  await setDoc(doc(db,'listas',data.listId,'membros',uid),{uid,role:'member',inviteCode:code,joinedAt:serverTimestamp()});
+  await connect(data.listId);
+ }catch(e){status('Não foi possível entrar: '+errorText(e));}
+}
+let qrLoading=null;
+async function showQR(){
+ const area=$('qrArea'),target=$('qrCanvas');
+ if(!area.classList.contains('hidden')){area.classList.add('hidden');return;}
+ area.classList.remove('hidden');target.textContent='Gerando QR Code...';
+ try{
+  if(!window.QRCode){
+   qrLoading??=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload=resolve;s.onerror=()=>reject(Error('Biblioteca QR indisponível'));document.head.append(s);
+   }).catch(e=>{qrLoading=null;throw e});
+   await qrLoading;
+  }
+  target.replaceChildren();
+  new window.QRCode(target,{text:inviteLink(),width:220,height:220,correctLevel:window.QRCode.CorrectLevel.M});
+ }catch(e){target.textContent='Não foi possível gerar o QR Code. Use Copiar link ou WhatsApp.';}
+}
+$('showQR').onclick=showQR;
+$('copyLink').onclick=()=>copyText(inviteLink(),'Link de convite copiado.');
+$('shareWhatsApp').onclick=()=>{
+ const message='Entre na minha lista de compras compartilhada (convite válido por 24 horas): '+inviteLink();
+ window.open('https://wa.me/?text='+encodeURIComponent(message),'_blank','noopener,noreferrer');
+};
+
 const plain=x=>({id:x.id,name:x.name,pack:x.pack,dept:x.dept,qty:Number(x.qty),price:Number(x.price),selected:!!x.selected,done:!!x.done});
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-function disconnect(){generation++;unsubItems?.();unsubList?.();unsubItems=unsubList=null;ready=false;remoteItems.clear();pending.clear();pendingBudget=null;displayedItems.clear();listId=null;$('inviteArea').classList.add('hidden');$('leaveShared').classList.add('hidden');}
+function disconnect(){generation++;unsubItems?.();unsubList?.();unsubItems=unsubList=null;ready=false;remoteItems.clear();pending.clear();pendingBudget=null;displayedItems.clear();listId=null;$('inviteArea').classList.add('hidden');$('qrArea').classList.add('hidden');$('leaveShared').classList.add('hidden');}
 function applyRemote(){if(!ready)return;const combined=new Map(remoteItems);for(const [id,value] of pending){if(value===null)combined.delete(id);else combined.set(id,value)};
  const nextBudget=pendingBudget===null?remoteBudget:pendingBudget;applying=true;try{bridge.apply([...combined.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR')),nextBudget);displayedItems=new Map(combined);displayedBudget=nextBudget;}finally{applying=false}}
 async function connect(id){disconnect();const gen=generation;listId=id;localStorage.setItem('shared-list-id',id);$('leaveShared').classList.remove('hidden');status('Sincronizando lista...');
@@ -40,9 +84,9 @@ $('createShared').onclick=async()=>{if(!uid)return status('Aguarde a autenticaç
  try{const id=randomCode(),batch=writeBatch(db);batch.set(doc(db,'listas',id),{ownerId:uid,budget:bridge.getBudget(),createdAt:serverTimestamp()});batch.set(doc(db,'listas',id,'membros',uid),{uid,joinedAt:serverTimestamp(),role:'owner'});
  for(const item of bridge.getItems())batch.set(doc(db,'listas',id,'produtos',item.id),plain(item));await batch.commit();await connect(id);await createInvite();}catch(e){status('Erro ao criar: '+errorText(e))}};
 async function createInvite(){if(!listId||!uid)return;try{const code=randomCode(),expiresAt=Date.now()+86400000;await setDoc(doc(db,'convites',code),{listId,createdBy:uid,expiresAt,createdAt:serverTimestamp()});$('inviteCode').value=code;$('inviteArea').classList.remove('hidden');}catch(e){status('Erro ao gerar convite: '+errorText(e))}}
-$('joinShared').onclick=async()=>{if(!uid)return status('Aguarde a autenticação.');const code=prompt('Cole o código de convite recebido:')?.trim().toLowerCase();if(!code)return;if(!/^[a-f0-9]{32}$/.test(code))return status('Código inválido.');
- try{const invite=await getDoc(doc(db,'convites',code));if(!invite.exists())throw Error('Convite não encontrado');const data=invite.data();if(data.expiresAt<Date.now())throw Error('Convite expirado');await setDoc(doc(db,'listas',data.listId,'membros',uid),{uid,role:'member',inviteCode:code,joinedAt:serverTimestamp()});await connect(data.listId);}catch(e){status('Não foi possível entrar: '+errorText(e))}};
+$('joinShared').onclick=()=>{const code=prompt('Cole o código de convite recebido:');if(code)joinByCode(code);};
 $('copyInvite').onclick=async()=>{try{await navigator.clipboard.writeText($('inviteCode').value);status('Convite copiado. Envie à outra pessoa em particular.')}catch{prompt('Copie o código:',$('inviteCode').value)}};
 $('leaveShared').onclick=()=>{if(!confirm('Desconectar este aparelho da lista?'))return;disconnect();localStorage.removeItem('shared-list-id');status('Modo local. Seus dados locais continuam neste aparelho.')};
-onAuthStateChanged(auth,async user=>{if(!user)return;uid=user.uid;const id=localStorage.getItem('shared-list-id');if(id){try{const member=await getDoc(doc(db,'listas',id,'membros',uid));if(member.exists())await connect(id);else status('Acesso à lista não encontrado. Crie uma lista ou entre com convite.')}catch(e){status(errorText(e))}}else status('Pronto. Crie uma lista compartilhada ou entre com convite.')});
+onAuthStateChanged(auth,async user=>{if(!user)return;uid=user.uid;if(inviteFromUrl){if(confirm('Deseja entrar nesta lista de compras compartilhada?'))await joinByCode(inviteFromUrl);return;}const id=localStorage.getItem('shared-list-id');if(id){try{const member=await getDoc(doc(db,'listas',id,'membros',uid));if(member.exists())await connect(id);else status('Acesso à lista não encontrado. Crie uma lista ou entre com convite.')}catch(e){status(errorText(e))}}else status('Pronto. Crie uma lista compartilhada ou entre com convite.')});
+// Process invitation links only after anonymous authentication has a stable UID.
 if(!auth.currentUser)signInAnonymously(auth).catch(e=>status('Falha na autenticação: '+errorText(e)));
