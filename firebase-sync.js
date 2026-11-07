@@ -54,10 +54,10 @@ $('shareWhatsApp').onclick=()=>{
 
 const plain=x=>({id:x.id,name:x.name,pack:x.pack,dept:x.dept,qty:Number(x.qty),price:Number(x.price),selected:!!x.selected,done:!!x.done});
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-function disconnect(){generation++;unsubItems?.();unsubList?.();unsubItems=unsubList=null;ready=false;remoteItems.clear();pending.clear();pendingBudget=null;displayedItems.clear();listId=null;$('inviteArea').classList.add('hidden');$('qrArea').classList.add('hidden');$('leaveShared').classList.add('hidden');}
+function disconnect(){generation++;unsubItems?.();unsubList?.();unsubItems=unsubList=null;ready=false;remoteItems.clear();pending.clear();pendingBudget=null;displayedItems.clear();listId=null;$('inviteArea').classList.add('hidden');$('qrArea').classList.add('hidden');$('generateInvite').classList.add('hidden');$('leaveShared').classList.add('hidden');}
 function applyRemote(){if(!ready)return;const combined=new Map(remoteItems);for(const [id,value] of pending){if(value===null)combined.delete(id);else combined.set(id,value)};
  const nextBudget=pendingBudget===null?remoteBudget:pendingBudget;applying=true;try{bridge.apply([...combined.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR')),nextBudget);displayedItems=new Map(combined);displayedBudget=nextBudget;}finally{applying=false}}
-async function connect(id){disconnect();const gen=generation;listId=id;localStorage.setItem('shared-list-id',id);$('leaveShared').classList.remove('hidden');status('Sincronizando lista...');
+async function connect(id){disconnect();const gen=generation;listId=id;localStorage.setItem('shared-list-id',id);$('leaveShared').classList.remove('hidden');$('generateInvite').classList.remove('hidden');status('Sincronizando lista...');
  unsubList=onSnapshot(doc(db,'listas',id),snap=>{if(gen!==generation)return;if(!snap.exists()){status('Lista indisponível.');return}remoteBudget=Number(snap.data().budget||0);applyRemote()},e=>{if(gen===generation)status('Erro na lista: '+errorText(e))});
  unsubItems=onSnapshot(collection(db,'listas',id,'produtos'),snap=>{if(gen!==generation)return;remoteItems=new Map(snap.docs.map(d=>[d.id,plain({...d.data(),id:d.id})]));ready=true;applyRemote();status('✓ Sincronizado — alterações aparecem nos dois celulares');},e=>{if(gen===generation)status('Erro de sincronização: '+errorText(e))});
 }
@@ -83,7 +83,8 @@ window.addEventListener('shopping-local-change',queueWrite);
 $('createShared').onclick=async()=>{if(!uid)return status('Aguarde a autenticação.');if(listId&&!confirm('Criar outra lista compartilhada? A atual continuará existindo.'))return;
  try{const id=randomCode(),batch=writeBatch(db);batch.set(doc(db,'listas',id),{ownerId:uid,budget:bridge.getBudget(),createdAt:serverTimestamp()});batch.set(doc(db,'listas',id,'membros',uid),{uid,joinedAt:serverTimestamp(),role:'owner'});
  for(const item of bridge.getItems())batch.set(doc(db,'listas',id,'produtos',item.id),plain(item));await batch.commit();await connect(id);await createInvite();}catch(e){status('Erro ao criar: '+errorText(e))}};
-async function createInvite(){if(!listId||!uid)return;try{const code=randomCode(),expiresAt=Date.now()+86400000;await setDoc(doc(db,'convites',code),{listId,createdBy:uid,expiresAt,createdAt:serverTimestamp()});$('inviteCode').value=code;$('inviteArea').classList.remove('hidden');}catch(e){status('Erro ao gerar convite: '+errorText(e))}}
+async function createInvite(){if(!listId||!uid)return;try{const code=randomCode(),expiresAt=Date.now()+86400000;await setDoc(doc(db,'convites',code),{listId,createdBy:uid,expiresAt,createdAt:serverTimestamp()});$('inviteCode').value=code;$('qrArea').classList.add('hidden');$('inviteArea').classList.remove('hidden');status('Novo convite gerado (válido por 24 horas).');}catch(e){status('Erro ao gerar convite: '+errorText(e))}}
+$('generateInvite').onclick=()=>createInvite();
 $('joinShared').onclick=()=>{const code=prompt('Cole o código de convite recebido:');if(code)joinByCode(code);};
 $('copyInvite').onclick=async()=>{try{await navigator.clipboard.writeText($('inviteCode').value);status('Convite copiado. Envie à outra pessoa em particular.')}catch{prompt('Copie o código:',$('inviteCode').value)}};
 $('leaveShared').onclick=()=>{if(!confirm('Desconectar este aparelho da lista?'))return;disconnect();localStorage.removeItem('shared-list-id');status('Modo local. Seus dados locais continuam neste aparelho.')};
