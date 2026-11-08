@@ -1,0 +1,76 @@
+name: Testes v2.4
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feature/ocr-v2.4]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Node e verificações estáticas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Testes unitários
+        run: node --test tests/*.test.mjs
+
+      - name: Sintaxe, manifesto e controles da interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check label-recognition.mjs
+          node --check firebase-sync.js
+          node --check sw.js
+          python3 -m json.tool manifest.webmanifest >/dev/null
+          python3 - <<'PY'
+          from collections import Counter
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import re
+          import subprocess
+          import tempfile
+
+          source = Path('index.html').read_text(encoding='utf-8')
+          match = re.search(r'<script type="module">([\s\S]*?)</script>', source)
+          if not match:
+              raise SystemExit('Módulo inline não encontrado em index.html')
+          with tempfile.NamedTemporaryFile(mode='w', suffix='.mjs', encoding='utf-8') as script:
+              script.write(match.group(1))
+              script.flush()
+              subprocess.run(['node', '--check', script.name], check=True)
+
+          class IdParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.ids = []
+              def handle_starttag(self, tag, attrs):
+                  self.ids.extend(value for key, value in attrs if key == 'id')
+
+          parser = IdParser()
+          parser.feed(source)
+          duplicates = [item for item, count in Counter(parser.ids).items() if count > 1]
+          if duplicates:
+              raise SystemExit(f'IDs HTML duplicados: {duplicates}')
+          required = {
+              'cameraPhoto', 'galleryPhoto', 'cropOverlay', 'cropPreview',
+              'zoomRange', 'recognizedName', 'recognizedBrand', 'recognizedPack',
+              'recognizedUnit', 'recognizedPrice', 'recognizedQty', 'recognizedDept',
+              'recognizedPriceChoice', 'photoProduct', 'updateRecognized',
+              'addRecognized', 'cancelScan'
+          }
+          missing = sorted(required - set(parser.ids))
+          if missing:
+              raise SystemExit(f'Controles OCR ausentes: {missing}')
+          print(f'{len(parser.ids)} IDs únicos; controles OCR presentes.')
+          PY

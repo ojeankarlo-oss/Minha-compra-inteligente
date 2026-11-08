@@ -1,0 +1,75 @@
+# Relatório de implementação e homologação — v2.4
+
+**Data:** 2026-11-08
+**Branch de trabalho:** `feature/ocr-v2.4`
+**Branch-base:** `main`
+**Commit-base diagnosticado:** `5c8dbc5048359d7c10e055870331dd6b5a876d91`
+**Commit de registro do diagnóstico inicial:** `d4c436da486774c5078a1d2c35a6515b37d749e7`
+
+## Resultado
+
+A v2.4 adiciona captura separada por câmera e galeria, seleção por toque da área da etiqueta, prévia do recorte e controles de contraste, brilho, ampliação e rotação manual. O OCR continua local e sem serviço pago: Tesseract.js 5 com idioma português, reutilizado entre leituras. O arquivo original não é alterado.
+
+O parser passou a usar texto e caixas geométricas do OCR para recompor reais e centavos que aparecem separados e em tamanhos/alturas diferentes. Preços concorrentes ficam sem seleção automática e são apresentados como alternativas. Preço inconclusivo permanece vazio. A tela de revisão permite editar nome, marca, embalagem, unidade, departamento, preço e quantidade; as ações de atualizar, cadastrar e cancelar são explícitas. Sugestões não substituem produtos automaticamente. Correspondências com variantes de lactose desconhecidas/diferentes são bloqueadas e divergências relevantes de embalagem reduzem a correspondência.
+
+A rodada de mocks reproduziu o risco de referência mutável e a sobrescrita entre clientes causada pela gravação do documento inteiro. A versão final clona snapshots na fronteira com a UI, compara cópias locais independentes e grava apenas os campos alterados de produtos existentes via `updateDoc`; novos produtos seguem `setDoc`. Pendências são reenviadas ao voltar a conexão ou reabrir/retornar ao app. Não foram alterados autenticação, regras, coleções ou esquema dos documentos Firestore; marca e unidade são incorporadas aos campos textuais existentes.
+
+O Service Worker foi versionado para v2.4.0, inclui `label-recognition.mjs` e o Firebase JS com a URL versionada utilizada pela página, remove caches antigos do aplicativo e preserva os dados locais.
+
+## Arquivos alterados/adicionados
+
+- `index.html` — captura, recorte e preparação da imagem, revisão editável e confirmação explícita; referências v2.4.0.
+- `label-recognition.mjs` — extração local de nome/marca/embalagem/preços, tratamento geométrico de centavos e similaridade conservadora.
+- `firebase-sync.js` — patches de campos, cópias de snapshots e retry; readiness e geração de conexão protegidas.
+- `sw.js` — cache v2.4.0, precache correto do módulo Firebase e inclusão do módulo OCR.
+- `tests/label-recognition.test.mjs` — testes automatizados locais.
+- `DIAGNOSTICO-v2.4.md` — diagnóstico prévio e atualização com a causa reproduzida no mock.
+- `RELATORIO-v2.4.md` — este relatório e instruções de homologação.
+
+## Evidências dos testes executados
+
+1. **Parser e similaridade:** `node --test tests/label-recognition.test.mjs` — 13 testes aprovados, 0 falhas. Inclui `R$ 5,99`, `R$ 19,90`, `129,99`, pares geométricos de reais/centavos, múltiplos preços, ausência de preço, códigos/descontos, embalagem, marca e variantes com/sem lactose.
+2. **Interface móvel em Chromium (390 × 844):** passou em cópia isolada sem o módulo Firebase. Usou imagem PNG sintética e Tesseract simulado. Verificou seleção de imagem, recorte por arraste/toque, ampliação, alternativas de preço sem escolha automática, cancelamento sem salvar, cadastro somente após clique explícito e atualização somente após selecionar produto e confirmar. Nenhum erro JavaScript de página.
+3. **Sincronização com Firestore mockado:** passou. A versão final envia apenas os campos alterados de um produto existente por `updateDoc`; novas inclusões continuam usando `setDoc`. A rodada complementar detalhada abaixo cobriu fila, reconexão e dois clientes. Nenhuma autenticação ou gravação no Firebase de produção.
+4. **PWA/Service Worker em Chromium local:** passou. O cache v2.4 foi ativado, o cache v2.3 foi removido, `index.html`, `firebase-sync.js?v=2.4.0` e `label-recognition.mjs` foram encontrados no precache e a página recarregou offline em modo local sem Firebase.
+5. **Verificações estáticas:** `node --check` no script inline, `label-recognition.mjs`, `firebase-sync.js` e `sw.js`; manifesto JSON válido; 75 IDs HTML únicos e controles OCR presentes; `git diff --check` sem erros.
+
+## Rodada complementar do PR #1 — 2026-11-08
+
+1. **Duas edições consecutivas de preço no mesmo produto:** passou em Chromium mockado. A primeira gravação ficou suspensa; a segunda alteração foi enfileirada. Após liberar a primeira, o remoto terminou com o segundo preço (`7,25`).
+2. **Firebase indisponível, duas falhas e reconexão:** passou. Duas tentativas consecutivas falharam; a fila manteve o valor mais recente (`9,25`) e o evento `online` o reenviou com sucesso.
+3. **Dois clientes simulados simultâneos:** passou. Cliente A alterou preço e cliente B quantidade no mesmo produto. O mock aplicou as duas atualizações em ordem inversa; ambos os campos permaneceram no documento e nos dois clientes. A correção foi trocar a gravação do documento inteiro por `updateDoc` com patch apenas dos campos alterados. Também foram isoladas as cópias de snapshots da interface, exigidos os snapshots iniciais da lista e produtos antes de habilitar writes e ignoradas continuações após troca de lista.
+4. **Confirmação OCR:** passou nos dois caminhos. Confirmar atualização gerou `updateDoc` com preço/quantidade; confirmar cadastro novo criou o produto via `setDoc`.
+5. **Cancelar leitura:** passou. Depois de reconhecer uma segunda etiqueta, cancelar preservou exatamente o `localStorage`, a lista remota mockada e a quantidade de chamadas de gravação.
+6. **Exclusão concorrente:** passou. O cliente B apagou remotamente um produto enquanto o cliente A tinha um patch pendente; o A manteve um objeto completo sem erro de renderização, e o update rejeitado ficou sinalizado como pendente.
+7. **Regressão:** os 13 testes unitários passaram (13/13); verificações de sintaxe, manifesto, IDs/controles e `git diff --check` passaram. Nenhum erro JavaScript nos dois clientes simulados.
+8. **Automação:** adicionado `.github/workflows/test.yml` para executar os testes Node e verificações estáticas em PRs para `main`, com permissões `contents: read` e sem segredos. O smoke de Chromium/Firestore é um harness temporário local, não versionado nem executado pelo Actions.
+
+## Limitações e testes ainda pendentes
+
+- Não foi fornecida uma fotografia real da etiqueta Knorr; o OCR foi simulado com texto e imagem sintéticos, não com OCR real daquela foto. A primeira leitura real depende ainda do carregamento do Tesseract.js e do modelo de português via CDN.
+- O smoke test da interface não acessou câmera física. A seleção da galeria e o recorte foram testados com arquivo sintético em Chromium; captura real, foco e qualidade da imagem precisam ser avaliados no Motorola.
+- A sincronização foi testada com dois clientes Chromium e Firestore mockado, não no Firebase real ou entre dois aparelhos. Autenticação anônima, convites e sincronização operacional seguem pendentes de homologação manual.
+- **Conflito do mesmo campo:** atualizações em campos distintos do mesmo produto não se sobrescrevem. Se dois clientes alterarem simultaneamente o mesmo campo (por exemplo, dois preços diferentes), o Firestore mantém a última gravação confirmada; não há resolução/intervenção de conflito na interface.
+- O Service Worker foi testado localmente em Chromium; a instalação Android existente e a atualização via GitHub Pages não foram testadas em um aparelho instalado.
+- Marca é identificada por um vocabulário local limitado; valores fora dele permanecem para conferência/edição.
+
+## Instruções de homologação manual no Motorola
+
+Após o PR ser revisado e depois que a publicação de homologação for autorizada, use uma URL HTTPS de teste compatível com o caminho relativo do GitHub Pages. Não é necessário desinstalar o PWA nem limpar dados.
+
+1. Abra a versão de homologação no Chrome do Motorola e selecione **Fotografar etiqueta**; repita com **Escolher da galeria**. Refaça uma captura e teste **Usar imagem inteira**.
+2. Arraste com o dedo para recortar a etiqueta. Confira a prévia e ajuste ampliação, contraste, brilho e inclinação até o texto ficar legível.
+3. Fotografe a etiqueta da Sopa Knorr Letrinhas (73 g; R$ 5,99). Compare nome, marca, embalagem, unidade, departamento e preço com o rótulo. Corrija manualmente qualquer divergência antes de confirmar.
+4. Teste uma etiqueta com atacado/varejo ou dois preços: nenhuma alternativa deve ser salva sem seleção/conferência. Teste também leitura inconclusiva: o preço deve permanecer vazio.
+5. Faça uma leitura e toque **Cancelar**; confirme que a lista, preço, quantidade e orçamento não mudaram. Depois teste **Confirmar cadastro novo** e **Confirmar atualização** em execuções separadas.
+6. Em uma lista compartilhada de homologação, altere preço e quantidade no Motorola sem marcar “No carrinho”; verifique a atualização no segundo aparelho. Repita uma alteração durante perda temporária de conexão e confira após reconectar.
+7. Em um PWA já instalado, abra a versão autorizada online para receber o Service Worker novo. Reabra o app e confira a versão v2.4, a lista local e a autenticação preservadas. Não desinstale o app e não apague armazenamento.
+
+## Atualização após reautorização
+
+Após a reautorização do GitHub, o push de `feature/ocr-v2.4` foi concluído e o Pull Request [#1](https://github.com/ojeankarlo-oss/Minha-compra-inteligente/pull/1) foi aberto para `main`. O commit `359b531` foi preservado na história da branch. Na rodada complementar foi adicionado o workflow `Testes v2.4`; o resultado de cada execução fica vinculado ao commit e visível nos checks do PR.
+
+## Governança
+
+O Pull Request permanece aberto para revisão. Nenhum merge em `main`, deploy, publicação ou gravação no Firebase de produção foi realizado. Não fazer merge ou publicar sem autorização explícita.
