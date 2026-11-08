@@ -12,7 +12,7 @@ A v2.4 adiciona captura separada por câmera e galeria, seleção por toque da �
 
 O parser passou a usar texto e caixas geométricas do OCR para recompor reais e centavos que aparecem separados e em tamanhos/alturas diferentes. Preços concorrentes ficam sem seleção automática e são apresentados como alternativas. Preço inconclusivo permanece vazio. A tela de revisão permite editar nome, marca, embalagem, unidade, departamento, preço e quantidade; as ações de atualizar, cadastrar e cancelar são explícitas. Sugestões não substituem produtos automaticamente. Correspondências com variantes de lactose desconhecidas/diferentes são bloqueadas e divergências relevantes de embalagem reduzem a correspondência.
 
-A causa da falha de sincronização foi reproduzida em Firestore simulado: os objetos da lista e os snapshots usados na comparação compartilhavam referências mutáveis, de modo que a edição já aparecia no “valor anterior” e não era enviada. A comparação agora usa cópias independentes. Pendências também são reenviadas ao voltar a conexão ou reabrir/retornar ao app. Não foram alterados autenticação, regras, coleções ou formato dos documentos Firestore; marca e unidade são incorporadas aos campos textuais existentes.
+A rodada de mocks reproduziu o risco de referência mutável e a sobrescrita entre clientes causada pela gravação do documento inteiro. A versão final clona snapshots na fronteira com a UI, compara cópias locais independentes e grava apenas os campos alterados de produtos existentes via `updateDoc`; novos produtos seguem `setDoc`. Pendências são reenviadas ao voltar a conexão ou reabrir/retornar ao app. Não foram alterados autenticação, regras, coleções ou esquema dos documentos Firestore; marca e unidade são incorporadas aos campos textuais existentes.
 
 O Service Worker foi versionado para v2.4.0, inclui `label-recognition.mjs` e o Firebase JS com a URL versionada utilizada pela página, remove caches antigos do aplicativo e preserva os dados locais.
 
@@ -20,7 +20,7 @@ O Service Worker foi versionado para v2.4.0, inclui `label-recognition.mjs` e o 
 
 - `index.html` — captura, recorte e preparação da imagem, revisão editável e confirmação explícita; referências v2.4.0.
 - `label-recognition.mjs` — extração local de nome/marca/embalagem/preços, tratamento geométrico de centavos e similaridade conservadora.
-- `firebase-sync.js` — cópias independentes para comparação e reenvio de operações pendentes.
+- `firebase-sync.js` — patches de campos, cópias de snapshots e retry; readiness e geração de conexão protegidas.
 - `sw.js` — cache v2.4.0, precache correto do módulo Firebase e inclusão do módulo OCR.
 - `tests/label-recognition.test.mjs` — testes automatizados locais.
 - `DIAGNOSTICO-v2.4.md` — diagnóstico prévio e atualização com a causa reproduzida no mock.
@@ -68,7 +68,7 @@ Após o PR ser revisado e depois que a publicação de homologação for autoriz
 
 ## Atualização após reautorização
 
-Após a reautorização do GitHub, o push de `feature/ocr-v2.4` foi concluído e o Pull Request [#1](https://github.com/ojeankarlo-oss/Minha-compra-inteligente/pull/1) foi aberto para `main`. O commit `359b531` foi preservado na história da branch. Na verificação inicial, o GitHub ainda não reportava checks de CI para a branch; os testes locais descritos acima passaram.
+Após a reautorização do GitHub, o push de `feature/ocr-v2.4` foi concluído e o Pull Request [#1](https://github.com/ojeankarlo-oss/Minha-compra-inteligente/pull/1) foi aberto para `main`. O commit `359b531` foi preservado na história da branch. Na rodada complementar foi adicionado o workflow `Testes v2.4`; o resultado de cada execução fica vinculado ao commit e visível nos checks do PR.
 
 ## Governança
 

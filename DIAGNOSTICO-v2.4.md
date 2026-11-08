@@ -37,3 +37,11 @@ A hipótese de falha no reenvio não era a única causa. O teste de integração
 Também foi testada uma falha temporária simulada: o valor ficou pendente, e o evento `online` reenviou a gravação pendente. O listener não foi alterado para reescrever dados em cada snapshot, evitando repetição de gravações. A autenticação, os caminhos/coleções e o formato existente dos documentos foram preservados; marca e unidade são incorporadas aos campos textuais já existentes no produto, sem novo campo no Firestore.
 
 **Limite da evidência:** esses testes usaram mock local e não abriram sessão nem gravaram dados no Firebase de produção. A sincronização entre dois aparelhos reais ainda precisa de homologação manual.
+
+## Atualização após rodada complementar de concorrência — 2026-11-08
+
+A revisão do PR encontrou que editar um produto existente com `setDoc` de documento completo podia apagar um campo atualizado simultaneamente por outro cliente. A versão final usa `updateDoc` com patch somente dos campos alterados; novos produtos continuam sendo criados com `setDoc`. Em Chromium isolado, dois clientes atualizaram preço e quantidade ao mesmo tempo e as escritas foram aplicadas em ordem inversa sem perda desses campos. Se ambos alterarem o mesmo campo, o comportamento permanece last-write-wins, sem diálogo de conflito.
+
+Também foram clonados os snapshots antes de entregá-los à UI, exigidos os snapshots iniciais do documento da lista e da coleção de produtos antes de habilitar writes, e adicionadas verificações de geração após operações assíncronas. Um teste mockado adicional cobriu exclusão remota enquanto o outro cliente mantinha um patch pendente: não houve item parcial nem erro de renderização.
+
+A rodada local cobriu duas edições consecutivas, duas falhas e retry após `online`, confirmação OCR de atualização/cadastro e cancelamento sem gravação. O smoke de Chromium/Firestore foi temporário e não está versionado nem incluído no GitHub Actions; o workflow automatiza os 13 testes Node e verificações estáticas. Nenhum Firebase de produção foi acessado. Câmera, foto real, autenticação/convites e sincronização entre aparelhos Motorola seguem para homologação manual.
