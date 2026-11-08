@@ -1,4 +1,4 @@
-const CACHE='minha-compra-v2-2-2';
+const CACHE='minha-compra-v2-3-0';
 self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png','./firebase-sync.js'])))});
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('minha-compra-')&&key!==CACHE).map(key=>caches.delete(key))))])));
 self.addEventListener('fetch',event=>{
