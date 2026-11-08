@@ -54,6 +54,10 @@ Após o PR ser revisado e depois que a publicação de homologação for autoriz
 6. Em uma lista compartilhada de homologação, altere preço e quantidade no Motorola sem marcar “No carrinho”; verifique a atualização no segundo aparelho. Repita uma alteração durante perda temporária de conexão e confira após reconectar.
 7. Em um PWA já instalado, abra a versão autorizada online para receber o Service Worker novo. Reabra o app e confira a versão v2.4, a lista local e a autenticação preservadas. Não desinstale o app e não apague armazenamento.
 
+## Atualização após reautorização
+
+Após a reautorização do GitHub, o push de `feature/ocr-v2.4` foi concluído e o Pull Request [#1](https://github.com/ojeankarlo-oss/Minha-compra-inteligente/pull/1) foi aberto para `main`. O commit `359b531` foi preservado na história da branch. Na verificação inicial, o GitHub ainda não reportava checks de CI para a branch; os testes locais descritos acima passaram.
+
 ## Governança
 
-As alterações estão commitadas localmente na branch `feature/ocr-v2.4`. O envio ao GitHub foi recusado com HTTP 403; embora a conta apareça com permissão `push` na API, o caminho Git autenticado não aceitou o envio. A branch remota e o Pull Request ainda não foram criados. Nenhum merge em `main`, deploy, publicação ou gravação no Firebase de produção foi realizado. Após restabelecer a autorização de escrita do GitHub, será possível enviar a mesma branch e abrir o PR. Aguardar autorização explícita antes de qualquer merge ou publicação.
+O Pull Request permanece aberto para revisão. Nenhum merge em `main`, deploy, publicação ou gravação no Firebase de produção foi realizado. Não fazer merge ou publicar sem autorização explícita.
