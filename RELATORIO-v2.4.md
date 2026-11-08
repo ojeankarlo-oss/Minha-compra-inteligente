@@ -56,4 +56,4 @@ Após o PR ser revisado e depois que a publicação de homologação for autoriz
 
 ## Governança
 
-As alterações estão apenas na branch `feature/ocr-v2.4`. Nenhum merge em `main`, deploy, publicação ou gravação no Firebase de produção foi realizado. O PR é para revisão; aguardar autorização explícita antes de qualquer merge ou publicação.
+As alterações estão commitadas localmente na branch `feature/ocr-v2.4`. O envio ao GitHub foi recusado com HTTP 403; embora a conta apareça com permissão `push` na API, o caminho Git autenticado não aceitou o envio. A branch remota e o Pull Request ainda não foram criados. Nenhum merge em `main`, deploy, publicação ou gravação no Firebase de produção foi realizado. Após restabelecer a autorização de escrita do GitHub, será possível enviar a mesma branch e abrir o PR. Aguardar autorização explícita antes de qualquer merge ou publicação.
