@@ -29,3 +29,11 @@
 ## Limitações da evidência inicial
 
 A análise acima é estática. A captura em câmera/galeria, recorte por toque, OCR de uma fotografia real da etiqueta Knorr, sincronização em dois dispositivos Android e atualização de uma instalação existente precisam de homologação manual em aparelho Motorola. Sem a fotografia de teste, os testes automatizados do parser devem usar amostras textuais/geométricas sintéticas e não comprovam a leitura daquela imagem real.
+
+## Atualização após os testes locais da implementação
+
+A hipótese de falha no reenvio não era a única causa. O teste de integração com Firestore simulado reproduziu o problema principal: `applyRemote()` entregava a `displayedItems` referências aos mesmos objetos mutáveis usados pela interface (`bridge.apply`). Ao editar preço ou quantidade, o objeto de comparação já continha o valor alterado, e `queueWrite()` concluía que nada havia mudado. A correção mantém snapshots independentes (`plain(item)`) para a comparação local/remote. O teste mock passou a observar `setDoc` no evento de alteração de preço, com `done=false`, sem marcar produto no carrinho.
+
+Também foi testada uma falha temporária simulada: o valor ficou pendente, e o evento `online` reenviou a gravação pendente. O listener não foi alterado para reescrever dados em cada snapshot, evitando repetição de gravações. A autenticação, os caminhos/coleções e o formato existente dos documentos foram preservados; marca e unidade são incorporadas aos campos textuais já existentes no produto, sem novo campo no Firestore.
+
+**Limite da evidência:** esses testes usaram mock local e não abriram sessão nem gravaram dados no Firebase de produção. A sincronização entre dois aparelhos reais ainda precisa de homologação manual.

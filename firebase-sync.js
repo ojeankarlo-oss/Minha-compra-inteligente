@@ -56,30 +56,34 @@ const plain=x=>({id:x.id,name:x.name,pack:x.pack,dept:x.dept,qty:Number(x.qty),p
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function disconnect(){generation++;unsubItems?.();unsubList?.();unsubItems=unsubList=null;ready=false;remoteItems.clear();pending.clear();pendingBudget=null;displayedItems.clear();listId=null;$('inviteArea').classList.add('hidden');$('qrArea').classList.add('hidden');$('generateInvite').classList.add('hidden');$('leaveShared').classList.add('hidden');}
 function applyRemote(){if(!ready)return;const combined=new Map(remoteItems);for(const [id,value] of pending){if(value===null)combined.delete(id);else combined.set(id,value)};
- const nextBudget=pendingBudget===null?remoteBudget:pendingBudget;applying=true;try{bridge.apply([...combined.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR')),nextBudget);displayedItems=new Map(combined);displayedBudget=nextBudget;}finally{applying=false}}
+ const nextBudget=pendingBudget===null?remoteBudget:pendingBudget;const ordered=[...combined.values()].sort((a,b)=>(a.name||'').localeCompare(b.name||'','pt-BR'));applying=true;try{bridge.apply(ordered,nextBudget);displayedItems=new Map(ordered.map(item=>[item.id,plain(item)]));displayedBudget=nextBudget;}finally{applying=false}}
 async function connect(id){disconnect();const gen=generation;listId=id;localStorage.setItem('shared-list-id',id);$('leaveShared').classList.remove('hidden');$('generateInvite').classList.remove('hidden');status('Sincronizando lista...');
  unsubList=onSnapshot(doc(db,'listas',id),snap=>{if(gen!==generation)return;if(!snap.exists()){status('Lista indisponível.');return}remoteBudget=Number(snap.data().budget||0);applyRemote()},e=>{if(gen===generation)status('Erro na lista: '+errorText(e))});
  unsubItems=onSnapshot(collection(db,'listas',id,'produtos'),snap=>{if(gen!==generation)return;remoteItems=new Map(snap.docs.map(d=>[d.id,plain({...d.data(),id:d.id})]));ready=true;applyRemote();status('✓ Sincronizado — alterações aparecem nos dois celulares');},e=>{if(gen===generation)status('Erro de sincronização: '+errorText(e))});
 }
-function queueWrite(){if(applying||!listId||!ready||!uid)return;
+function queueWrite(retryPending=false){if(applying||!listId||!ready||!uid)return;
  const target=listId,gen=generation,now=new Map(bridge.getItems().map(i=>[i.id,plain(i)])),budget=bridge.getBudget();
- const changes=[];for(const [id,value] of now)if(!equal(displayedItems.get(id),value))changes.push([id,value]);
- for(const id of displayedItems.keys())if(!now.has(id))changes.push([id,null]);
+ const changes=new Map();if(retryPending)for(const [id,value] of pending)changes.set(id,value);
+ for(const [id,value] of now)if(!equal(displayedItems.get(id),value))changes.set(id,value);
+ for(const id of displayedItems.keys())if(!now.has(id))changes.set(id,null);
  for(const [id,value] of changes)pending.set(id,value);
  const budgetChanged=budget!==displayedBudget;if(budgetChanged)pendingBudget=budget;
+ const budgetToWrite=budgetChanged?budget:retryPending&&pendingBudget!==null?pendingBudget:null;
  displayedItems=now;displayedBudget=budget;
- if(!changes.length&&!budgetChanged)return;
- // Each action changes only its own product documents, never rewrites the entire remote collection.
+ if(!changes.size&&budgetToWrite===null)return;
+ // Cada ação grava somente os documentos alterados; pendências são reenviadas ao reconectar.
  writeQueue=writeQueue.then(async()=>{if(target!==listId||gen!==generation)return;
-  for(const [id,value] of changes){if(target!==listId||gen!==generation)return;
-   if(value===null)await deleteDoc(doc(db,'listas',target,'produtos',id));else await setDoc(doc(db,'listas',target,'produtos',id),value);
-   if(equal(pending.get(id),value))pending.delete(id);
+  for(const [id,value] of changes){if(target!==listId||gen!==generation)return;if(retryPending&&!pending.has(id))continue;const writeValue=retryPending?pending.get(id):value;
+   if(writeValue===null)await deleteDoc(doc(db,'listas',target,'produtos',id));else await setDoc(doc(db,'listas',target,'produtos',id),writeValue);
+   if(equal(pending.get(id),writeValue))pending.delete(id);
   }
-  if(budgetChanged){await updateDoc(doc(db,'listas',target),{budget});if(pendingBudget===budget)pendingBudget=null;}
+  if(budgetToWrite!==null&&(!retryPending||pendingBudget!==null)){const writeBudget=retryPending?pendingBudget:budgetToWrite;await updateDoc(doc(db,'listas',target),{budget:writeBudget});if(pendingBudget===writeBudget)pendingBudget=null;}
   if(gen===generation){applyRemote();status('✓ Alterações salvas');}
  }).catch(e=>{if(gen===generation)status('Erro ao salvar (alteração pendente neste aparelho): '+errorText(e))});
 }
-window.addEventListener('shopping-local-change',queueWrite);
+window.addEventListener('shopping-local-change',()=>queueWrite());
+window.addEventListener('online',()=>queueWrite(true));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')queueWrite(true)});
 $('createShared').onclick=async()=>{if(!uid)return status('Aguarde a autenticação.');if(listId&&!confirm('Criar outra lista compartilhada? A atual continuará existindo.'))return;
  try{const id=randomCode(),batch=writeBatch(db);batch.set(doc(db,'listas',id),{ownerId:uid,budget:bridge.getBudget(),createdAt:serverTimestamp()});batch.set(doc(db,'listas',id,'membros',uid),{uid,joinedAt:serverTimestamp(),role:'owner'});
  for(const item of bridge.getItems())batch.set(doc(db,'listas',id,'produtos',item.id),plain(item));await batch.commit();await connect(id);await createInvite();}catch(e){status('Erro ao criar: '+errorText(e))}};
