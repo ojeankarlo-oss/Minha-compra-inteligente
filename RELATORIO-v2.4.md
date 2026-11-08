@@ -30,15 +30,27 @@ O Service Worker foi versionado para v2.4.0, inclui `label-recognition.mjs` e o 
 
 1. **Parser e similaridade:** `node --test tests/label-recognition.test.mjs` — 13 testes aprovados, 0 falhas. Inclui `R$ 5,99`, `R$ 19,90`, `129,99`, pares geométricos de reais/centavos, múltiplos preços, ausência de preço, códigos/descontos, embalagem, marca e variantes com/sem lactose.
 2. **Interface móvel em Chromium (390 × 844):** passou em cópia isolada sem o módulo Firebase. Usou imagem PNG sintética e Tesseract simulado. Verificou seleção de imagem, recorte por arraste/toque, ampliação, alternativas de preço sem escolha automática, cancelamento sem salvar, cadastro somente após clique explícito e atualização somente após selecionar produto e confirmar. Nenhum erro JavaScript de página.
-3. **Sincronização com Firestore mockado:** passou. Uma edição de preço gerou `setDoc` sem marcar `done`/“no carrinho”; uma falha de rede simulada manteve o valor pendente e o evento `online` o reenviou. Nenhuma autenticação ou gravação no Firebase de produção.
+3. **Sincronização com Firestore mockado:** passou. A versão final envia apenas os campos alterados de um produto existente por `updateDoc`; novas inclusões continuam usando `setDoc`. A rodada complementar detalhada abaixo cobriu fila, reconexão e dois clientes. Nenhuma autenticação ou gravação no Firebase de produção.
 4. **PWA/Service Worker em Chromium local:** passou. O cache v2.4 foi ativado, o cache v2.3 foi removido, `index.html`, `firebase-sync.js?v=2.4.0` e `label-recognition.mjs` foram encontrados no precache e a página recarregou offline em modo local sem Firebase.
-5. **Verificações estáticas:** `node --check` no script inline, `label-recognition.mjs`, `firebase-sync.js` e `sw.js`; manifesto JSON válido; IDs do HTML sem duplicatas e controles OCR presentes; `git diff --check` sem erros.
+5. **Verificações estáticas:** `node --check` no script inline, `label-recognition.mjs`, `firebase-sync.js` e `sw.js`; manifesto JSON válido; 75 IDs HTML únicos e controles OCR presentes; `git diff --check` sem erros.
+
+## Rodada complementar do PR #1 — 2026-11-08
+
+1. **Duas edições consecutivas de preço no mesmo produto:** passou em Chromium mockado. A primeira gravação ficou suspensa; a segunda alteração foi enfileirada. Após liberar a primeira, o remoto terminou com o segundo preço (`7,25`).
+2. **Firebase indisponível, duas falhas e reconexão:** passou. Duas tentativas consecutivas falharam; a fila manteve o valor mais recente (`9,25`) e o evento `online` o reenviou com sucesso.
+3. **Dois clientes simulados simultâneos:** passou. Cliente A alterou preço e cliente B quantidade no mesmo produto. O mock aplicou as duas atualizações em ordem inversa; ambos os campos permaneceram no documento e nos dois clientes. A correção foi trocar a gravação do documento inteiro por `updateDoc` com patch apenas dos campos alterados. Também foram isoladas as cópias de snapshots da interface, exigidos os snapshots iniciais da lista e produtos antes de habilitar writes e ignoradas continuações após troca de lista.
+4. **Confirmação OCR:** passou nos dois caminhos. Confirmar atualização gerou `updateDoc` com preço/quantidade; confirmar cadastro novo criou o produto via `setDoc`.
+5. **Cancelar leitura:** passou. Depois de reconhecer uma segunda etiqueta, cancelar preservou exatamente o `localStorage`, a lista remota mockada e a quantidade de chamadas de gravação.
+6. **Exclusão concorrente:** passou. O cliente B apagou remotamente um produto enquanto o cliente A tinha um patch pendente; o A manteve um objeto completo sem erro de renderização, e o update rejeitado ficou sinalizado como pendente.
+7. **Regressão:** os 13 testes unitários passaram (13/13); verificações de sintaxe, manifesto, IDs/controles e `git diff --check` passaram. Nenhum erro JavaScript nos dois clientes simulados.
+8. **Automação:** adicionado `.github/workflows/test.yml` para executar os testes Node e verificações estáticas em PRs para `main`, com permissões `contents: read` e sem segredos. O smoke de Chromium/Firestore é um harness temporário local, não versionado nem executado pelo Actions.
 
 ## Limitações e testes ainda pendentes
 
-- Não foi fornecida uma fotografia real da etiqueta Knorr; o texto esperado foi testado com amostras sintéticas e posições geométricas, não com OCR real daquela foto. A primeira leitura real depende ainda do carregamento do Tesseract.js e do modelo de português via CDN.
-- O smoke test da interface não acessou câmera física. A seleção da galeria e o recorte foram testados com arquivo sintético em Chromium móvel; captura real, foco e qualidade da imagem precisam ser avaliados no Motorola.
-- A sincronização foi testada por mock, não no Firebase de produção ou entre dois aparelhos. A conexão, autenticação anônima, convites e sincronização em dois dispositivos permanecem sem homologação operacional.
+- Não foi fornecida uma fotografia real da etiqueta Knorr; o OCR foi simulado com texto e imagem sintéticos, não com OCR real daquela foto. A primeira leitura real depende ainda do carregamento do Tesseract.js e do modelo de português via CDN.
+- O smoke test da interface não acessou câmera física. A seleção da galeria e o recorte foram testados com arquivo sintético em Chromium; captura real, foco e qualidade da imagem precisam ser avaliados no Motorola.
+- A sincronização foi testada com dois clientes Chromium e Firestore mockado, não no Firebase real ou entre dois aparelhos. Autenticação anônima, convites e sincronização operacional seguem pendentes de homologação manual.
+- **Conflito do mesmo campo:** atualizações em campos distintos do mesmo produto não se sobrescrevem. Se dois clientes alterarem simultaneamente o mesmo campo (por exemplo, dois preços diferentes), o Firestore mantém a última gravação confirmada; não há resolução/intervenção de conflito na interface.
 - O Service Worker foi testado localmente em Chromium; a instalação Android existente e a atualização via GitHub Pages não foram testadas em um aparelho instalado.
 - Marca é identificada por um vocabulário local limitado; valores fora dele permanecem para conferência/edição.
 
